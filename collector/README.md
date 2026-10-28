@@ -70,15 +70,15 @@ The portable layout keeps collector paths under `collector\`, Angular assets und
 before starting the delivered runtime. The manifest is unsigned local integrity
 evidence, not publisher authentication.
 
-| Path from package root | Purpose |
-|---|---|
-| `Start-ExchangeLogReportAngular.cmd` | Start the authenticated, read-only loopback portal |
-| `Run-Collector.cmd` | Existing discovery, collection, status and static report commands |
-| `Database-Storage.cmd` | Read-only footprint audit and explicit new-copy maintenance |
-| `collector\config\ExchangeLogReport.config.psd1` | Deliberately mutable operator configuration |
-| `collector\src\` and `collector\lib\sqlite\` | Collector source compiled in memory and SQLite dependencies |
-| `collector\docs\` and `collector\templates\` | Existing guides and static report template |
-| `web\`, `powershell\`, `host\`, `sqlite-tools\` | Portable application and dependencies |
+Paths below are relative to the package root:
+
+- `Start-ExchangeLogReportAngular.cmd`: Start the authenticated, read-only loopback portal.
+- `Run-Collector.cmd`: Existing discovery, collection, status and static report commands.
+- `Database-Storage.cmd`: Read-only footprint audit and explicit new-copy maintenance.
+- `collector\config\ExchangeLogReport.config.psd1`: Deliberately mutable operator configuration.
+- `collector\src\` and `collector\lib\sqlite\`: Collector source compiled in memory and SQLite dependencies.
+- `collector\docs\` and `collector\templates\`: Existing guides and static report template.
+- `web\`, `powershell\`, `host\`, `sqlite-tools\`: Portable application and dependencies.
 
 - **Usage** report: servers (verdict *In use* / *No real usage*), real users with their clients and
   devices (Outlook builds, mobile devices), operations with their failure rate and latency, SMTP clients
