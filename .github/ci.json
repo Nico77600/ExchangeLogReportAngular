@@ -1,0 +1,19 @@
+{
+  "runtimeRoot": "collector",
+  "testMode": "pester",
+  "testEntry": null,
+  "tests": [
+    "collector/tests/ExchangeLogReport.Tests.ps1",
+    "collector/tests/SqliteOptimization.Tests.ps1",
+    "collector/tests/Serve.Backend.Tests.ps1",
+    "collector/tests/Serve.Initialization.Tests.ps1",
+    "collector/tests/Serve.MeasurementGate.Tests.ps1",
+    "collector/tests/Serve.Performance.Tests.ps1",
+    "collector/tests/Serve.RollupVerification.Tests.ps1",
+    "collector/tests/Serve.SmtpClients.Tests.ps1",
+    "tests/PackageIntegrity.Tests.ps1",
+    "tests/Workflow.Tests.ps1"
+  ],
+  "packageBuilder": "tools/Build-Standalone.ps1",
+  "packageEntry": "Invoke-ExchangeLogReport.ps1"
+}

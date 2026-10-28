@@ -1,0 +1,19 @@
+SQLite command-line shell 3.54.0 (Windows x64)
+
+Official distribution:
+https://www.sqlite.org/2026/sqlite-tools-win-x64-3540000.zip
+
+Archive SHA3-256 published by sqlite.org and verified during development:
+8d1ccff873455c7f83c6e03ee253e81406d0e432ca9e7247ed6183929a824b33
+
+Archive SHA256:
+63cb06e952a83fd140139b008ed5b47496608161c62f8cd17bc96e8beb1de029
+
+sqlite3.exe SHA256:
+1d4dbbc37396c5de744e1a732540b8bc83cd89888f47e86365b726e5a813c5e7
+
+SQLite is public domain. See https://www.sqlite.org/copyright.html .
+Only the official sqlite3.exe is included, for read-only DBSTAT measurement.
+It does not replace the collector's embedded e_sqlite3 library (3.53.3).
+No extension is installed or loaded into that library.
+No SQLite command from a browser or untrusted data is executed.

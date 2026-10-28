@@ -1,0 +1,21 @@
+{
+  "name": "ExchangeLogReportAngular",
+  "version": "0.3.0",
+  "sourceVersion": "2.0.1",
+  "visibility": "public",
+  "status": "experimental-local-pilot",
+  "runtimeIdentifier": "win-x64",
+  "angularVersion": "21.2.25",
+  "sqliteTools": {
+    "version": "3.54.0",
+    "url": "https://www.sqlite.org/2026/sqlite-tools-win-x64-3540000.zip",
+    "archiveSha256": "63cb06e952a83fd140139b008ed5b47496608161c62f8cd17bc96e8beb1de029",
+    "archiveSha3_256": "8d1ccff873455c7f83c6e03ee253e81406d0e432ca9e7247ed6183929a824b33",
+    "executableSha256": "1d4dbbc37396c5de744e1a732540b8bc83cd89888f47e86365b726e5a813c5e7"
+  },
+  "powerShell": {
+    "version": "7.6.7",
+    "url": "https://github.com/PowerShell/PowerShell/releases/download/v7.6.7/PowerShell-7.6.7-win-x64.zip",
+    "sha256": "d2f952ebdbf24386cb8923553aa58e41a846db35a6155ea04c58142a4b16dbb7"
+  }
+}

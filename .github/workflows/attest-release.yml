@@ -1,0 +1,323 @@
+name: Attest distributed Angular release ZIP (experimental pilot)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Exact existing published release tag (default branch only)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: attest-release-${{ github.repository }}-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  attest:
+    if: >-
+      github.repository_owner == 'Nico77600' &&
+      github.repository == 'Nico77600/ExchangeLogReportAngular' &&
+      github.event.repository.private == false &&
+      (
+        (github.event_name == 'release' && github.event.action == 'published' && github.event.release.draft == false) ||
+        (github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download actual distributed ZIPs and verify their compiled Angular inventory
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_HOST: github.com
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          EXPECTED_RELEASE_ID: ${{ github.event.release.id }}
+          EVENT_ACTION: ${{ github.event.action }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import stat
+          import subprocess
+          from urllib.parse import quote
+          import zipfile
+
+          def fail(message):
+              raise SystemExit(message)
+
+          def positive_integer(value, label):
+              if type(value) is not int or value <= 0:
+                  fail(f"Invalid {label}")
+              return value
+
+          def package_path(value):
+              if not isinstance(value, str) or not value or "\x00" in value:
+                  fail("Invalid package path")
+              value = value.replace("\\", "/")
+              if value.startswith("/") or ":" in value or any(part in ("", ".", "..") for part in value.split("/")):
+                  fail("Unsafe package path")
+              return value
+
+          def inventory_path(value):
+              normalized = package_path(value)
+              if value != normalized.replace("/", "\\"):
+                  fail("Inventory paths must use canonical relative Windows backslashes")
+              return normalized
+
+          def verify_bundle(source, expected_version=None):
+              with zipfile.ZipFile(source) as archive:
+                  entries = archive.infolist()
+                  if not entries or len(entries) > 50000:
+                      fail("Invalid ZIP entry count")
+                  files = {}
+                  seen = set()
+                  total = 0
+                  for entry in entries:
+                      name = package_path(entry.filename.rstrip("/") if entry.is_dir() else entry.filename)
+                      if name.casefold() in seen:
+                          fail("Duplicate or case-colliding ZIP entry")
+                      seen.add(name.casefold())
+                      if entry.flag_bits & 1 or stat.S_ISLNK(entry.external_attr >> 16):
+                          fail("Encrypted ZIP entries and symlinks are not supported")
+                      if entry.is_dir():
+                          continue
+                      total += entry.file_size
+                      if total > 2 * 1024 * 1024 * 1024:
+                          fail("ZIP uncompressed size exceeds the reviewed limit")
+                      files[name] = entry
+                  manifests = [name for name in files if name == "PackageIntegrity.json" or name.endswith("/PackageIntegrity.json")]
+                  if len(manifests) != 1:
+                      fail("Exactly one PackageIntegrity.json is required; no source archive fallback")
+                  manifest_name = manifests[0]
+                  prefix = manifest_name[:-len("PackageIntegrity.json")]
+                  if any(not name.startswith(prefix) for name in files):
+                      fail("Files exist outside the package root")
+                  manifest_info = files[manifest_name]
+                  if manifest_info.file_size > 16 * 1024 * 1024:
+                      fail("Package integrity manifest is too large")
+                  manifest = json.loads(archive.read(manifest_info).decode("utf-8-sig"))
+                  if not isinstance(manifest, dict) or type(manifest.get("schemaVersion")) is not int or manifest.get("schemaVersion") != 1:
+                      fail("Unsupported package integrity manifest schema")
+                  if manifest.get("name") != "ExchangeLogReportAngular" or not isinstance(manifest.get("version"), str):
+                      fail("Unexpected package product identity")
+                  if expected_version is not None and manifest["version"] != expected_version:
+                      fail("The package version does not match the exact release tag")
+                  mutable = manifest.get("mutableConfiguration", ["collector\\config\\ExchangeLogReport.config.psd1"])
+                  if not isinstance(mutable, list) or [inventory_path(name) for name in mutable] != ["collector/config/ExchangeLogReport.config.psd1"]:
+                      fail("Unexpected mutable configuration contract")
+                  digests = {}
+
+                  def verify_inventory(inventory):
+                      if not isinstance(inventory, list) or not inventory:
+                          fail("The package file inventory is empty")
+                      listed = {}
+                      for item in inventory:
+                          if not isinstance(item, dict):
+                              fail("Invalid package inventory entry")
+                          name = inventory_path(item.get("path"))
+                          if name.casefold() in listed:
+                              fail("Duplicate package inventory path")
+                          expected_size = item.get("bytes")
+                          if type(expected_size) is not int or expected_size < 0:
+                              fail("Invalid package inventory size")
+                          expected_hash = item.get("sha256")
+                          if not isinstance(expected_hash, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_hash):
+                              fail("Invalid package inventory SHA-256")
+                          entry = files.get(prefix + name)
+                          if entry is None or entry.file_size != expected_size:
+                              fail("A packaged file is missing or its size differs from the inventory")
+                          if name not in digests:
+                              digest = hashlib.sha256()
+                              with archive.open(entry) as stream:
+                                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                                      digest.update(chunk)
+                              digests[name] = digest.hexdigest()
+                          if digests[name] != expected_hash.lower():
+                              fail("A packaged file SHA-256 differs from the inventory")
+                          listed[name.casefold()] = name
+                      return set(listed.values())
+
+                  actual = {name[len(prefix):] for name in files}
+                  generated_prefixes = (
+                      "collector/bin/", "collector/data/", "collector/logs/", "collector/reports/",
+                      "data/", "logs/", "reports/",
+                  )
+                  if any(name.casefold().startswith(generated_prefixes) for name in actual):
+                      fail("Generated state or development cache files must not be shipped in a release ZIP")
+                  immutable = actual - {
+                      "PackageIntegrity.json", "FILES.sha256.json",
+                      "collector/config/ExchangeLogReport.config.psd1",
+                  }
+                  if verify_inventory(manifest.get("files")) != immutable:
+                      fail("The integrity manifest must cover every distributed immutable file")
+                  required = {
+                      "tools/Test-PackageIntegrity.ps1", "collector/Invoke-ExchangeLogReport.ps1",
+                      "collector/ExchangeLogReport.psm1", "web/index.html", "powershell/pwsh.exe",
+                  }
+                  if not required.issubset(immutable):
+                      fail("Required runtime files are not protected by the integrity manifest")
+                  full_inventory_info = files.get(prefix + "FILES.sha256.json")
+                  if full_inventory_info is None or full_inventory_info.file_size > 16 * 1024 * 1024:
+                      fail("The complete build-time FILES.sha256.json inventory is missing or too large")
+                  full_inventory = json.loads(archive.read(full_inventory_info).decode("utf-8-sig"))
+                  if verify_inventory(full_inventory) != actual - {"FILES.sha256.json"}:
+                      fail("The full inventory must cover the manifest and initial mutable configuration")
+                  if "collector/config/ExchangeLogReport.config.psd1" not in actual:
+                      fail("The initial mutable configuration is missing from the release ZIP")
+                  if "web/index.html" not in actual:
+                      fail("The distributed ZIP does not contain web/index.html")
+                  scripts = sorted(name for name in actual if name.startswith("web/") and name.endswith(".js"))
+                  styles = sorted(name for name in actual if name.startswith("web/") and name.endswith(".css"))
+                  if not scripts or not styles:
+                      fail("The distributed ZIP must contain compiled Angular JavaScript and CSS")
+                  html = archive.read(files[prefix + "web/index.html"]).decode("utf-8-sig")
+                  if "<app-root" not in html or not any(name[4:] in html for name in scripts) or not any(name[4:] in html for name in styles):
+                      fail("The Angular entrypoint does not reference its distributed compiled JavaScript/CSS")
+                  return {
+                      "manifest_sha256": hashlib.sha256(archive.read(manifest_info)).hexdigest(),
+                      "verified_files": len(actual) - 1,
+                      "compiled_javascript_files": len(scripts),
+                      "compiled_stylesheet_files": len(styles),
+                  }
+
+          # Runtime entrypoint: no checkout, build, package execution or arbitrary workflow artifacts.
+          repository = os.environ["GITHUB_REPOSITORY"]
+          if repository != "Nico77600/ExchangeLogReportAngular":
+              fail("Unexpected repository owner or name")
+          event = os.environ["GITHUB_EVENT_NAME"]
+          if event == "workflow_dispatch":
+              branch = os.environ["DEFAULT_BRANCH"]
+              if not branch or os.environ["GITHUB_REF"] != f"refs/heads/{branch}":
+                  fail("Manual attestation must run from the default branch")
+          elif event == "release":
+              if os.environ["EVENT_ACTION"] != "published":
+                  fail("Only published release events are trusted")
+          else:
+              fail("Unsupported event")
+          tag = os.environ.get("RELEASE_TAG", "")
+          if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", tag):
+              fail("An explicit v-prefixed semantic version release tag is required")
+          subprocess.run(["git", "check-ref-format", f"refs/tags/{tag}"], check=True)
+          encoded_tag = quote(tag, safe="")
+          base = f"repos/{repository}"
+
+          def api(endpoint, *, paginate=False, output=None):
+              command = [
+                  "gh", "api", "--hostname", "github.com", "--method", "GET",
+                  "-H", "X-GitHub-Api-Version: 2022-11-28",
+                  "-H", "Accept: application/octet-stream" if output is not None
+                  else "Accept: application/vnd.github+json",
+              ]
+              if paginate:
+                  command.extend(["--paginate", "--slurp"])
+              command.append(endpoint)
+              # gh removes Authorization on cross-host redirects; do not add a token header.
+              result = subprocess.run(command, check=True, stdout=output if output is not None else subprocess.PIPE)
+              if output is None:
+                  return json.loads(result.stdout)
+
+          repository_metadata = api(base)
+          if repository_metadata.get("full_name") != repository or repository_metadata.get("private") is not False:
+              fail("Only the exact intended public repository is supported")
+          reference = api(f"{base}/git/ref/tags/{encoded_tag}")
+          if not isinstance(reference, dict) or reference.get("ref") != f"refs/tags/{tag}":
+              fail("The exact release tag does not exist")
+
+          def release():
+              metadata = api(f"{base}/releases/tags/{encoded_tag}")
+              if not isinstance(metadata, dict) or metadata.get("tag_name") != tag:
+                  fail("Release tag does not match the requested tag")
+              if metadata.get("draft") is not False or not metadata.get("published_at"):
+                  fail("The release must be published and not a draft")
+              release_id = positive_integer(metadata.get("id"), "release ID")
+              if event == "release" and str(release_id) != os.environ["EXPECTED_RELEASE_ID"]:
+                  fail("Release ID does not match the published event")
+              return release_id
+
+          def zip_assets(release_id):
+              pages = api(f"{base}/releases/{release_id}/assets?per_page=100", paginate=True)
+              if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
+                  fail("Invalid paginated release asset response")
+              assets = [asset for page in pages for asset in page]
+              if not assets:
+                  fail("The release has no distributed assets; no source archive fallback")
+              selected = {}
+              seen = set()
+              for asset in assets:
+                  if not isinstance(asset, dict) or not isinstance(asset.get("name"), str):
+                      fail("Invalid release asset metadata")
+                  asset_id = positive_integer(asset.get("id"), "asset ID")
+                  if asset_id in seen:
+                      fail("Duplicate release asset ID")
+                  seen.add(asset_id)
+                  if not asset["name"].lower().endswith(".zip"):
+                      continue
+                  if asset.get("state") != "uploaded":
+                      fail("A ZIP asset is not fully uploaded")
+                  size = positive_integer(asset.get("size"), "ZIP asset size")
+                  digest = asset.get("digest")
+                  if digest is not None and (
+                      not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-fA-F]{64}", digest)
+                  ):
+                      fail("Invalid or unsupported ZIP asset digest")
+                  selected[asset_id] = (asset["name"], size, digest.lower() if digest else None)
+              if not selected:
+                  fail("The release has no distributed ZIP assets")
+              if len(selected) > 1024:
+                  fail("The release exceeds the attestation action's 1024-subject limit")
+              return selected
+
+          release_id = release()
+          assets = zip_assets(release_id)
+          Path("dist").mkdir()
+          for asset_id, (name, expected_size, expected_digest) in sorted(assets.items()):
+              target = Path("dist") / f"{asset_id}.zip"
+              try:
+                  with target.open("xb") as output:
+                      api(f"{base}/releases/assets/{asset_id}", output=output)
+                  if target.stat().st_size != expected_size:
+                      fail(f"Size mismatch for ZIP asset {asset_id}")
+                  hasher = hashlib.sha256()
+                  with target.open("rb") as stream:
+                      for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                          hasher.update(chunk)
+                  digest = f"sha256:{hasher.hexdigest()}"
+                  if expected_digest is not None and digest != expected_digest:
+                      fail(f"SHA-256 mismatch for ZIP asset {asset_id}")
+                  bundle = verify_bundle(target, expected_version=tag[1:])
+                  print(json.dumps({
+                      "asset_id": asset_id, "release_name": name, "subject": str(target),
+                      "size": expected_size, "digest": digest,
+                      "github_digest_verified": expected_digest is not None,
+                      **bundle,
+                  }, ensure_ascii=True))
+              except BaseException:
+                  target.unlink(missing_ok=True)
+                  raise
+          if release() != release_id or zip_assets(release_id) != assets:
+              fail("Release ZIP assets changed during download; do not attest an unstable release")
+          if api(f"{base}/git/ref/tags/{encoded_tag}") != reference:
+              fail("The release tag changed during verification")
+          PY
+
+      # The subject is the actual ZIP, including its verified Angular bundle; not proof of its original build.
+      - name: Generate attestation for the verified distributed ZIP bytes
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: 'dist/*.zip'
+          push-to-registry: false
+          create-storage-record: false

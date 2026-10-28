@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="490" viewBox="0 0 1600 490" role="img" aria-labelledby="title desc">
+  <title id="title">Exchange Log Report Angular</title>
+  <desc id="desc">Experimental local Exchange investigation. On-demand routes, client timelines and SMTP evidence. Static Usage remains separate; no collection from the portal.</desc>
+  <defs>
+    <linearGradient id="surface" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#ffffff"/><stop offset="1" stop-color="#f9eff2"/>
+    </linearGradient>
+    <clipPath id="card"><rect x="10" y="10" width="1580" height="470" rx="26"/></clipPath>
+  </defs>
+  <rect x="10" y="10" width="1580" height="470" rx="26" fill="url(#surface)" stroke="#dddddd" stroke-width="2"/>
+  <g clip-path="url(#card)"><circle cx="1430" cy="40" r="235" fill="none" stroke="#b71c50" stroke-opacity=".08" stroke-width="70"/></g>
+  <path d="M37 13H1563" stroke="#b71c50" stroke-width="5" stroke-linecap="round"/>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <rect x="55" y="55" width="88" height="88" rx="24" fill="#b71c50"/>
+    <g fill="none" stroke="#ffffff" stroke-width="3.5"><rect x="77" y="78" width="44" height="18" rx="3"/><rect x="77" y="104" width="44" height="18" rx="3"/><path d="M84 87h4m-4 26h4"/></g>
+    <text x="170" y="77" fill="#b71c50" font-size="16" font-weight="700" letter-spacing="2">EXCHANGE SERVER / ON-PREMISES</text>
+    <text x="170" y="126" fill="#242424" font-size="43" font-weight="700">Exchange Log Report Angular</text>
+    <text x="55" y="205" fill="#242424" font-size="27">A familiar Detailed view, loaded on demand.</text>
+    <text x="55" y="252" fill="#535353" font-size="23">Message routes, client timelines and SMTP evidence</text>
+    <text x="55" y="286" fill="#535353" font-size="23">from a local SQLite history. Static Usage stays separate.</text>
+    <rect x="55" y="335" width="212" height="48" rx="24" fill="#b71c50"/>
+    <text x="161" y="365" text-anchor="middle" fill="#ffffff" font-size="19" font-weight="600">0.3.0 experimental</text>
+    <rect x="280" y="335" width="175" height="48" rx="24" fill="#ffffff" stroke="#dddddd"/>
+    <text x="368" y="365" text-anchor="middle" fill="#535353" font-size="19">Private local pilot</text>
+    <rect x="468" y="335" width="205" height="48" rx="24" fill="#ffffff" stroke="#dddddd"/>
+    <text x="571" y="365" text-anchor="middle" fill="#535353" font-size="19">Portable Windows x64</text>
+    <text x="55" y="435" fill="#535353" font-size="17">Nicolas Fabert / unsigned / not production-qualified</text>
+    <g fill="#ffffff" stroke="#dddddd" stroke-width="2">
+      <rect x="1080" y="75" width="455" height="100" rx="22"/>
+      <rect x="1080" y="195" width="455" height="100" rx="22"/>
+      <rect x="1080" y="315" width="455" height="100" rx="22"/>
+    </g>
+    <g fill="#b71c50" font-weight="700" font-size="32"><text x="1110" y="136">11</text><text x="1110" y="256">API</text><text x="1110" y="376">0</text></g>
+    <g fill="#242424" font-size="21" font-weight="600"><text x="1200" y="119">Current SQLite schema</text><text x="1200" y="239">Local read-only portal</text><text x="1200" y="359">Collections from the UI</text></g>
+    <g fill="#535353" font-size="19"><text x="1200" y="150">Explicit migration on a copy</text><text x="1200" y="270">127.0.0.1 + process token</text><text x="1200" y="390">Collector remains separate</text></g>
+  </g>
+</svg>
