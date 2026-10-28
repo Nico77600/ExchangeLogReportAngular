@@ -29,7 +29,7 @@
         {
           "name": "Verify the installed Node version before npm",
           "shell": "pwsh",
-          "run": "& .\\.github\\scripts\\Test-NodeEngine.ps1"
+          "run": "& .\\.github\\scripts\\Test-NodeEngine.ps1 -UseRunnerToolCache"
         },
         {
           "name": "Install only the committed frontend lockfile",

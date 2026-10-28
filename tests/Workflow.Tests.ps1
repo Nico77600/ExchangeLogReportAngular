@@ -6,6 +6,25 @@ BeforeAll {
     $script:Ci = Get-Content -LiteralPath (Join-Path $script:Workflows 'ci.yml') -Raw | ConvertFrom-Json
     $script:Codeql = Get-Content -LiteralPath (Join-Path $script:Workflows 'codeql.yml') -Raw | ConvertFrom-Json
     $script:Attestation = Get-Content -LiteralPath (Join-Path $script:Workflows 'attest-release.yml') -Raw
+    $tokens = $null
+    $errors = $null
+    $preflightAst = [Management.Automation.Language.Parser]::ParseFile(
+        (Join-Path $script:Root '.github\scripts\Test-NodeEngine.ps1'), [ref]$tokens, [ref]$errors)
+    if ($errors.Count) { throw 'Node engine helper does not parse.' }
+    $selector = $preflightAst.Find({
+        param($node)
+        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Get-CachedNode24Directory'
+    }, $true)
+    if ($null -eq $selector) { throw 'The cached Node 24 selector is missing.' }
+    . ([scriptblock]::Create($selector.Extent.Text))
+    function New-CachedNodeFixture([string]$Root, [string]$Version) {
+        $directory = Join-Path $Root "node\$Version\x64"
+        [void][IO.Directory]::CreateDirectory($directory)
+        foreach ($name in 'node.exe', 'npm.cmd') {
+            [IO.File]::WriteAllText((Join-Path $directory $name), 'synthetic-only, never executed')
+        }
+        return $directory
+    }
 }
 
 Describe 'Public pilot workflow contracts' {
@@ -84,7 +103,7 @@ Describe 'Public pilot workflow contracts' {
     It 'checks Node before npm and never falls back from the committed lockfile or bypasses audit' {
         $steps = @($script:Ci.jobs.validate.steps)
         $runs = @($steps | Where-Object { $_.PSObject.Properties['run'] } | ForEach-Object run)
-        $runs[0] | Should -Match 'Test-NodeEngine\.ps1'
+        $runs[0] | Should -BeExactly '& .\.github\scripts\Test-NodeEngine.ps1 -UseRunnerToolCache'
         $runs | Should -Contain 'npm ci --no-fund'
         $runs | Should -Contain 'npm audit --audit-level=high'
         $runs | Should -Contain 'npm run build'
@@ -94,6 +113,53 @@ Describe 'Public pilot workflow contracts' {
         $preflight | Should -Match 'package-lock\.json'
         $preflight | Should -Match 'semver\.satisfies'
         $preflight | Should -Match 'semver\.major\(process\.version\) !== 24'
+    }
+
+    It 'selects the newest cached stable Node 24 without accepting other majors or prereleases' {
+        $cache = Join-Path $TestDrive 'node-cache'
+        [void](New-CachedNodeFixture $cache '22.23.4')
+        [void](New-CachedNodeFixture $cache '24.20.0')
+        $expected = New-CachedNodeFixture $cache '24.22.1'
+        [void](New-CachedNodeFixture $cache '24.23.0-rc.1')
+        [void](New-CachedNodeFixture $cache '26.0.0')
+        Get-CachedNode24Directory -ToolCacheRoot $cache | Should -BeExactly $expected
+    }
+
+    It 'fails explicitly when the runner cache is missing' {
+        { Get-CachedNode24Directory -ToolCacheRoot (Join-Path $TestDrive 'missing-cache') } |
+            Should -Throw '*tool cache is missing*'
+    }
+
+    It 'refuses a cache without stable Node 24 instead of using the default major' {
+        $cache = Join-Path $TestDrive 'wrong-node-cache'
+        [void](New-CachedNodeFixture $cache '22.23.4')
+        { Get-CachedNode24Directory -ToolCacheRoot $cache } | Should -Throw '*no cached stable Node 24*'
+    }
+
+    It 'rejects the incomplete selected version rather than silently using an older cache entry' {
+        $cache = Join-Path $TestDrive 'incomplete-node-cache'
+        [void](New-CachedNodeFixture $cache '24.20.0')
+        [void][IO.Directory]::CreateDirectory((Join-Path $cache 'node\24.22.1\x64'))
+        { Get-CachedNode24Directory -ToolCacheRoot $cache } | Should -Throw '*selected cached Node 24 is incomplete*'
+    }
+
+    It 'keeps runner selection opt-in, publishes its path only after validation and never downloads a runtime' {
+        $preflight = [IO.File]::ReadAllText((Join-Path $script:Root '.github\scripts\Test-NodeEngine.ps1'))
+        $preflight | Should -Match 'param\(\[switch\]\$UseRunnerToolCache\)'
+        $preflight | Should -Match '\$env:GITHUB_ACTIONS -cne ''true'''
+        $preflight | Should -Match 'Get-CachedNode24Directory -ToolCacheRoot \$env:RUNNER_TOOL_CACHE'
+        $tokens = $null
+        $errors = $null
+        $ast = [Management.Automation.Language.Parser]::ParseInput($preflight, [ref]$tokens, [ref]$errors)
+        $commands = @($ast.FindAll({
+            param($node)
+            $node -is [Management.Automation.Language.CommandAst]
+        }, $true) | ForEach-Object { $_.GetCommandName() })
+        foreach ($name in 'Invoke-WebRequest', 'Invoke-RestMethod', 'Start-BitsTransfer', 'npm', 'npm.cmd') {
+            $commands | Should -Not -Contain $name
+        }
+        $preflight.IndexOf('Add-Content -LiteralPath $env:GITHUB_PATH') |
+            Should -BeGreaterThan $preflight.IndexOf("throw 'Node engine preflight failed.")
     }
 
     It 'builds linked collector source and verifies the standalone package without publishing it' {

@@ -1,9 +1,37 @@
 #Requires -Version 7.4
 [CmdletBinding()]
-param()
+param([switch]$UseRunnerToolCache)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+function Get-CachedNode24Directory([Parameter(Mandatory)][string]$ToolCacheRoot) {
+    $cache = Join-Path $ToolCacheRoot 'node'
+    if (-not (Test-Path -LiteralPath $cache -PathType Container)) {
+        throw 'The runner Node tool cache is missing; no runtime will be downloaded.'
+    }
+    $versions = @(Get-ChildItem -LiteralPath $cache -Directory |
+        Where-Object Name -Match '^24\.\d+\.\d+$' |
+        Sort-Object { [version]$_.Name } -Descending)
+    if (-not $versions.Count) {
+        throw 'The runner has no cached stable Node 24; review the image rather than bypassing the engine requirement.'
+    }
+    $directory = Join-Path $versions[0].FullName 'x64'
+    foreach ($name in 'node.exe', 'npm.cmd') {
+        if (-not (Test-Path -LiteralPath (Join-Path $directory $name) -PathType Leaf)) {
+            throw "The selected cached Node 24 is incomplete: $name. No fallback or download is allowed."
+        }
+    }
+    return $directory
+}
+$nodeDirectory = $null
+if ($UseRunnerToolCache) {
+    if ($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_OS -cne 'Windows' -or
+        [string]::IsNullOrWhiteSpace($env:RUNNER_TOOL_CACHE) -or [string]::IsNullOrWhiteSpace($env:GITHUB_PATH)) {
+        throw 'Explicit runner-cache selection requires the Windows GitHub Actions environment.'
+    }
+    $nodeDirectory = Get-CachedNode24Directory -ToolCacheRoot $env:RUNNER_TOOL_CACHE
+    $env:PATH = $nodeDirectory + ';' + $env:PATH
+}
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $npm = Get-Command npm.cmd -ErrorAction Stop
 # Use npm's already-installed range evaluator, not an npm install/exec download.
@@ -38,3 +66,6 @@ console.log(`Preinstalled Node ${process.version} satisfies project and locked A
 '@
 & node -e $script $semver $root
 if ($LASTEXITCODE -ne 0) { throw 'Node engine preflight failed. No npm command was run.' }
+if ($UseRunnerToolCache) {
+    Add-Content -LiteralPath $env:GITHUB_PATH -Value $nodeDirectory -Encoding utf8
+}
