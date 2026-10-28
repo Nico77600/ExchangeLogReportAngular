@@ -1,0 +1,6 @@
+# Exact bytes are authenticated by Authenticode; do not transform line endings.
+/collector/ExchangeLogReport.psd1 -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/collector/ExchangeLogReport.psm1 -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/collector/Invoke-ExchangeLogReport.ps1 -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/collector/src/Get-ExlExchangeSettings.ps1 -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/tools/Test-PackageIntegrity.ps1 -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

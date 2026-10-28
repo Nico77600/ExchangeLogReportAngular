@@ -1,0 +1,64 @@
+{
+  "name": "CodeQL (Angular pilot, advisory)",
+  "on": { "workflow_dispatch": {} },
+  "permissions": { "contents": "read" },
+  "concurrency": {
+    "group": "codeql-${{ github.repository }}-${{ github.ref }}",
+    "cancel-in-progress": true
+  },
+  "jobs": {
+    "analyze": {
+      "name": "CodeQL ${{ matrix.language }} (advisory)",
+      "if": "${{ github.repository_owner == 'Nico77600' && github.repository == 'Nico77600/ExchangeLogReportAngular' && github.event.repository.private == false && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}",
+      "runs-on": "windows-2022",
+      "timeout-minutes": 30,
+      "permissions": { "contents": "read", "security-events": "write" },
+      "strategy": {
+        "fail-fast": false,
+        "max-parallel": 2,
+        "matrix": {
+          "include": [
+            { "language": "csharp", "build-mode": "manual" },
+            { "language": "javascript-typescript", "build-mode": "none" },
+            { "language": "actions", "build-mode": "none" }
+          ]
+        }
+      },
+      "steps": [
+        {
+          "name": "Check out the default-branch revision without persistent credentials",
+          "uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          "with": { "persist-credentials": false }
+        },
+        {
+          "name": "Initialize advisory language analysis",
+          "uses": "github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d",
+          "with": {
+            "languages": "${{ matrix.language }}",
+            "build-mode": "${{ matrix.build-mode }}",
+            "threads": 2,
+            "dependency-caching": "false",
+            "config": "{\"name\":\"Isolated Angular Serve pilot\",\"paths-ignore\":[\"artifacts\",\".cache\",\"frontend/node_modules\",\"frontend/dist\",\"host/bin\",\"host/obj\"]}"
+          }
+        },
+        {
+          "name": "Compile host and every linked collector Engine C# source",
+          "if": "${{ matrix.language == 'csharp' }}",
+          "shell": "pwsh",
+          "env": { "DOTNET_CLI_TELEMETRY_OPTOUT": "1" },
+          "run": "dotnet build .\\host\\ExchangeLogReportAngular.Host.csproj --configuration Release --no-incremental --verbosity quiet"
+        },
+        {
+          "name": "Analyze and upload advisory results",
+          "uses": "github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d",
+          "with": {
+            "category": "/language:${{ matrix.language }}",
+            "upload": "always",
+            "upload-database": "false",
+            "wait-for-processing": "true"
+          }
+        }
+      ]
+    }
+  }
+}

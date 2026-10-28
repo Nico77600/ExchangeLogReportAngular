@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>ExchangeLogReportAngular</AssemblyName>
+    <Version>0.3.0</Version>
+    <PublishSingleFile>false</PublishSingleFile>
+    <DefaultItemExcludes>$(DefaultItemExcludes);publish\**;test-artifacts\**</DefaultItemExcludes>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Update="wwwroot\**" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="..\collector\src\Engine.*.cs" Link="Engine\%(Filename)%(Extension)" />
+    <Reference Include="Microsoft.Data.Sqlite"><HintPath>..\collector\lib\sqlite\Microsoft.Data.Sqlite.dll</HintPath></Reference>
+    <Reference Include="SQLitePCLRaw.core"><HintPath>..\collector\lib\sqlite\SQLitePCLRaw.core.dll</HintPath></Reference>
+    <Reference Include="SQLitePCLRaw.batteries_v2"><HintPath>..\collector\lib\sqlite\SQLitePCLRaw.batteries_v2.dll</HintPath></Reference>
+    <Reference Include="SQLitePCLRaw.provider.e_sqlite3"><HintPath>..\collector\lib\sqlite\SQLitePCLRaw.provider.e_sqlite3.dll</HintPath></Reference>
+    <None Include="..\collector\lib\sqlite\runtimes\win-x64\e_sqlite3.dll" Link="e_sqlite3.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

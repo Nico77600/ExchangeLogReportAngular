@@ -1,0 +1,105 @@
+<header class="report-hero">
+  <div class="hero-top">
+    <div><span class="eyebrow">Exchange Server / on-premises</span><h1>Exchange Server troubleshooting</h1>
+      <p class="subtitle">Detailed report: client sessions with their timeline, messages with their route, and SMTP clients with their transactions. Select a view below; details are loaded only when opened.</p>
+    </div>
+    <div class="period"><span class="eyebrow">Period</span><div>{{ text(filters.from) }}<br>{{ text(filters.to) }} (exclusive)</div><small>ISO dates include their UTC offset.</small></div>
+  </div>
+  @if (summary(); as activity) {
+    <div class="metrics">
+      <article class="tile tile-primary"><span class="tile-label">Servers with retained activity</span><strong>{{ activity.servers.length | number }}</strong><small>Within the selected period and filters</small></article>
+      <article class="tile tile-tinted"><span class="tile-label">Retained access requests</span><strong>{{ activity.totals.access | number }}</strong><small>Not a complete historical usage total</small></article>
+      <article class="tile tile-tinted"><span class="tile-label">Tracking events</span><strong>{{ activity.totals.tracking | number }}</strong><small>Events, not distinct messages</small></article>
+      <article class="tile"><span class="tile-label">SMTP transactions</span><strong>{{ activity.totals.smtp | number }}</strong><small>Retained transactions in this selection</small></article>
+    </div>
+  }
+</header>
+@if (summary(); as activity) {
+  <section class="report-block"><h2>Servers</h2><p class="caption">Retained source activity only. Click a server to select it; this is not the static Usage report's real-user summary.</p>
+    <div class="cards">
+      @for (server of activity.servers; track server.name) {
+        <button type="button" class="server-card" (click)="selectServer(server.name)" [attr.aria-label]="'Select server ' + server.name">
+          <strong>{{ server.name }}</strong><div class="kv"><span>Access requests<b>{{ server.access | number }}</b></span><span>Tracking events<b>{{ server.tracking | number }}</b></span><span>SMTP transactions<b>{{ server.smtp | number }}</b></span></div><small>Open server selection</small>
+        </button>
+      } @empty { <p>No retained activity matches this selection.</p> }
+    </div>
+  </section>
+  <section class="report-block"><h2>Activity by day (UTC)</h2><p class="caption">Retained access requests and tracking events, not unique messages or complete historical usage.</p>
+    <div class="legend"><span><i class="access-key"></i>Retained access requests</span><span><i class="tracking-key"></i>Tracking events</span></div>
+    <div class="activity-chart" role="img" aria-label="Retained access requests and tracking events per UTC day">
+      @for (day of activity.days; track day.day) {
+        <div class="activity-day" [title]="day.day + ': ' + day.access + ' retained requests, ' + day.tracking + ' tracking events'">
+          <div class="activity-bars"><span class="access-bar" [style.height.%]="day.access / activity.maximum * 100"></span><span class="tracking-bar" [style.height.%]="day.tracking / activity.maximum * 100"></span></div><small>{{ day.day }}</small>
+        </div>
+      } @empty { <p>No activity in this period.</p> }
+    </div>
+  </section>
+}
+<section class="report-block">
+  <nav class="tabs" aria-label="Investigation views">
+    @for (route of routes; track route.path) {
+      <a [routerLink]="route.path" routerLinkActive="active" ariaCurrentWhenActive="page" queryParamsHandling="preserve">{{ route.label }}</a>
+    }
+    @if (view() === 'smtpTransactions') { <a [routerLink]="listPath()" class="active" aria-current="page" queryParamsHandling="preserve">SMTP transactions</a> }
+  </nav>
+  <p class="caption">{{ captions[view()] }}</p>
+  @if (clientId() !== undefined) { <p class="caption">Selected SMTP client #{{ clientId() }} only. <a routerLink="/smtp/clients" [queryParams]="filters">Back to SMTP clients</a></p> }
+  <form class="filter-form" (ngSubmit)="apply()">
+    <label class="field">From (computer local time)<input type="datetime-local" name="from" [(ngModel)]="fromInput" required></label>
+    <label class="field">To, exclusive (computer local time)<input type="datetime-local" name="to" [(ngModel)]="toInput" required></label>
+    <label class="field">User / mailbox contains<input name="user" [(ngModel)]="filters.user" maxlength="256" placeholder="All users"></label>
+    <label class="field">Server<select name="server" [(ngModel)]="filters.server"><option value="">All servers</option>@for (server of meta()?.servers ?? []; track server) { <option [value]="server">{{ server }}</option> }</select></label>
+    @if (view() !== 'overview') {
+      <label class="field">Exact status<input name="status" [(ngModel)]="filters.status" maxlength="256" placeholder="All statuses"></label>
+      <label class="field">Page size<select name="size" [(ngModel)]="filters.size">@for (size of [25,50,100,200,500]; track size) { <option [ngValue]="size">{{ size }}</option> }</select></label>
+    }
+    <div class="controls"><button class="primary" type="submit" [disabled]="loading()">Apply selection</button><button type="button" (click)="clear()" [disabled]="loading()">Clear filters</button>
+      @if (view() !== 'overview' && clientId() === undefined) { <button type="button" (click)="exportCsv()" [disabled]="exporting() || loading()">{{ exporting() ? 'Exporting...' : 'Export view to CSV' }}</button> }
+    </div>
+  </form>
+  <details class="selection-notes"><summary>Selection, retention and private links</summary>
+    <p>Filters are kept in this page's URL. Review account/date filters before copying it to a private ticket. The access token is not in the copied URL. A recipient must launch their own authorized local instance.</p>
+    @if (meta(); as meta) { <p>Database: {{ meta.databaseBytes / 1048576 | number:'1.0-1' }} MiB / schema {{ meta.schemaVersion }}. Collected log range: {{ meta.coveredFrom ?? 'not recorded' }} to {{ meta.coveredTo ?? 'not recorded' }}. Retained details may cover a shorter period. No Detailed snapshot generated.</p> }
+  </details>
+  @if (error()) { <div class="error" role="alert">{{ error() }}</div> }
+  @if (loading()) { <div class="loading" role="status">Reading the requested view...</div> }
+  @if (result(); as result) {
+    <div class="result-state" role="status"><span>{{ result.rows.length | number }} records loaded. No full-dataset transfer.</span>@if (elapsed() !== null) { <span>Last view: {{ elapsed() | number }} ms (browser + API)</span> }</div>
+    @if (basis()) { <p class="view-basis">{{ basis() }}</p> }
+    <exl-grid [columns]="result.columns" [rows]="result.rows" [label]="names[view()]" [detailEnabled]="view() !== 'overview'" (open)="open($event)" />
+    @if (paged(); as page) {
+      <footer class="pagination"><span>Page {{ page.page | number }} / {{ page.size }} maximum rows. Total is not scanned to display a page.</span>
+        <div><button type="button" (click)="navigatePage(page.page - 1)" [disabled]="loading() || page.page <= 1">Previous</button><button type="button" (click)="navigatePage(page.page + 1)" [disabled]="loading() || !page.hasMore || page.page * page.size > 10000">Next</button></div>
+      </footer>
+    }
+  }
+</section>
+@if (detail(); as detail) {
+  <dialog #detailDialog class="report-dialog" aria-labelledby="detail-title" (cancel)="closeDetail($event)">
+    <div class="dialog-head"><h2 id="detail-title">{{ detail.title }} #{{ detail.id }}</h2><button type="button" (click)="back()">Close</button></div>
+    <div class="dialog-body">
+      @if (view() === 'smtp') { <button type="button" class="primary" (click)="transactions()">View transactions</button> }
+      @for (column of detail.columns; track $index; let index = $index) {
+        <section class="detail-field"><h3>{{ column.name }}</h3>
+          @if (nested(detail.cells[index]); as rows) {
+            @if (column.name === 'Route' || column.name === 'Timeline') {
+              <ol class="evidence-timeline">
+                @for (row of rows; track $index) {
+                  <li><div class="when">{{ text(row[0]) }} <span>{{ text(row[1]) }}</span></div>
+                    <strong>{{ text(row[2]) }}</strong><p>{{ text(row[3]) }}</p>
+                    @if (column.name === 'Route') { <pre>{{ text(row[4]) }}</pre> }
+                    @else { <p>{{ text(row[7]) }}</p><details><summary>Request and source-log evidence</summary><pre>{{ expanded(row) }}</pre></details> }
+                  </li>
+                }
+              </ol>
+            } @else if (column.name === 'SMTP transcripts') {
+              @for (row of rows; track $index) { <details class="transcript"><summary>{{ text(row[0]) }} / {{ text(row[1]) }} / {{ text(row[2]) }}</summary><pre>{{ text(row[3]) }}</pre></details> }
+            } @else {
+              <div class="table-scroll"><table class="nested-table"><tbody>@for (row of rows; track $index) { <tr>@for (value of row; track $index) { <td><pre>{{ expanded(value) }}</pre></td> }</tr> }</tbody></table></div>
+            }
+          } @else { <pre>{{ text(detail.cells[index], column) }}</pre> }
+        </section>
+      }
+    </div>
+  </dialog>
+}

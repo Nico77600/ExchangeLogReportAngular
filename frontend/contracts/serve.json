@@ -1,0 +1,13 @@
+{
+  "version": "0.3.0",
+  "definitions": {
+    "Cell": { "union": ["string", "number", "boolean", "null", "Cell[]"] },
+    "Column": { "name": "string", "kind": "string", "grid": "boolean" },
+    "Row": { "id": "number", "cells": "Cell[]" },
+    "Page": { "columns": "Column[]", "rows": "Row[]", "page": "number", "size": "number", "hasMore": "boolean", "total": "number | null" },
+    "Overview": { "columns": "Column[]", "rows": "Row[]", "from": "string", "to": "string", "basis": "string" },
+    "Detail": { "id": "number", "title": "string", "columns": "Column[]", "cells": "Cell[]" },
+    "Meta": { "name": "string", "version": "string", "schemaVersion": "number", "supportedSchemaVersion": "number", "requiresMigration": "boolean", "databaseBytes": "number", "coveredFrom": "string | null", "coveredTo": "string | null", "servers": "string[]", "readOnly": "boolean", "mode": "string" }
+  },
+  "endpoints": { "meta": "/api/meta", "overview": "/api/overview", "messages": "/api/messages", "sessions": "/api/sessions", "smtp": "/api/smtp/clients", "smtpTransactions": "/api/smtp/transactions", "export": "/api/export.csv", "shutdown": "/api/shutdown" }
+}

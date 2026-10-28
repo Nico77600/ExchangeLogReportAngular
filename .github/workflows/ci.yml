@@ -1,0 +1,92 @@
+{
+  "name": "CI (Angular pilot)",
+  "on": {
+    "pull_request": { "branches": ["main"] },
+    "push": { "branches": ["main"] },
+    "workflow_dispatch": {}
+  },
+  "permissions": { "contents": "read" },
+  "concurrency": {
+    "group": "ci-${{ github.repository }}-${{ github.ref }}",
+    "cancel-in-progress": true
+  },
+  "jobs": {
+    "validate": {
+      "name": "Validate (PowerShell 7)",
+      "if": "${{ github.repository_owner == 'Nico77600' && github.repository == 'Nico77600/ExchangeLogReportAngular' && github.event.repository.private == false }}",
+      "runs-on": "windows-2022",
+      "timeout-minutes": 45,
+      "env": {
+        "NG_CLI_ANALYTICS": "false",
+        "DOTNET_CLI_TELEMETRY_OPTOUT": "1"
+      },
+      "steps": [
+        {
+          "name": "Check out the tested revision without persistent credentials",
+          "uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          "with": { "persist-credentials": false }
+        },
+        {
+          "name": "Verify the installed Node version before npm",
+          "shell": "pwsh",
+          "run": "& .\\.github\\scripts\\Test-NodeEngine.ps1 -UseRunnerToolCache"
+        },
+        {
+          "name": "Install only the committed frontend lockfile",
+          "shell": "pwsh",
+          "working-directory": "frontend",
+          "run": "npm ci --no-fund"
+        },
+        {
+          "name": "Reject high and critical npm vulnerabilities",
+          "shell": "pwsh",
+          "working-directory": "frontend",
+          "run": "npm audit --audit-level=high"
+        },
+        {
+          "name": "Build the compiled Angular bundle",
+          "shell": "pwsh",
+          "working-directory": "frontend",
+          "run": "npm run build"
+        },
+        {
+          "name": "Run Angular unit tests once",
+          "shell": "pwsh",
+          "working-directory": "frontend",
+          "run": "npm test -- --watch=false"
+        },
+        {
+          "name": "Compile host and linked collector Engine sources",
+          "shell": "pwsh",
+          "run": "dotnet build .\\host\\ExchangeLogReportAngular.Host.csproj --configuration Release --no-incremental --verbosity quiet"
+        },
+        {
+          "name": "Load the exact pinned Pester module",
+          "shell": "pwsh",
+          "run": "& .\\.github\\scripts\\Initialize-CIModules.ps1 -Destination (Join-Path $env:GITHUB_WORKSPACE 'artifacts\\ci-modules')"
+        },
+        {
+          "name": "Build and verify the standalone package",
+          "shell": "pwsh",
+          "run": "$ErrorActionPreference = 'Stop'\n& .\\tools\\Build-Standalone.ps1 -OutputRoot (Join-Path $env:GITHUB_WORKSPACE 'artifacts\\ci-package')\n$product = Get-Content .\\product.json -Raw | ConvertFrom-Json\n$package = Join-Path $env:GITHUB_WORKSPACE ('artifacts\\ci-package\\{0}-{1}-win-x64' -f $product.name, $product.version)\n& (Join-Path $package 'tools\\Test-PackageIntegrity.ps1') -Root $package\nCopy-Item -LiteralPath (Join-Path $package 'PackageIntegrity.json') -Destination .\\artifacts\\ci-evidence\\package-inventory.json"
+        },
+        {
+          "name": "Run collector, Serve, package integrity and workflow tests under the packaged runtime",
+          "shell": "pwsh",
+          "run": "$ErrorActionPreference = 'Stop'\n$product = Get-Content .\\product.json -Raw | ConvertFrom-Json\n$package = Join-Path $env:GITHUB_WORKSPACE ('artifacts\\ci-package\\{0}-{1}-win-x64' -f $product.name, $product.version)\n& (Join-Path $package 'powershell\\pwsh.exe') -NoLogo -NoProfile -File .\\.github\\scripts\\Invoke-CITests.ps1 -PackageRoot $package\nif ($LASTEXITCODE -ne 0) { throw 'Packaged-runtime regression tests failed.' }"
+        },
+        {
+          "name": "Retain only synthetic validation summaries and file hashes",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+          "with": {
+            "name": "angular-pilot-validation",
+            "path": "artifacts/ci-evidence/module-inventory.json\nartifacts/ci-evidence/validation-summary.json\nartifacts/ci-evidence/package-inventory.json",
+            "if-no-files-found": "error",
+            "retention-days": 7
+          }
+        }
+      ]
+    }
+  }
+}

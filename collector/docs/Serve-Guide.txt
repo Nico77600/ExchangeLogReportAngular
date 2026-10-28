@@ -1,0 +1,148 @@
+ExchangeLogReportAngular - local Serve guide (experimental 0.3.0)
+Author: Nicolas Fabert
+
+WHAT CHANGES
+Serve starts System.Net.HttpListener, bound only to 127.0.0.1, and reads the
+selected SQLite database on demand. It does not build a Detailed HTML, CSV
+bundle or report snapshot before showing a list. Static Usage HTML remains
+available with the existing Report/Usage command. Collection is a separate
+command and does not run from the web interface.
+
+COLLECTION -> SQLITE -> REPORTS OR ANGULAR
+1. Configure collector\config\ExchangeLogReport.config.psd1 for the designated
+   servers. Discover log paths deliberately; keep the existing collection
+   account, permissions and scheduled task separate from the browser.
+2. Run Run-Collector.cmd -Mode Collect (or its existing scheduled task). It reads
+   new log evidence, applies the configured noise/retention rules and commits
+   source data plus derived structures to SQLite. Status reports collection
+   state; opening Serve does not perform this work.
+3. Choose an independent consumer of that collected history:
+   - Run-Collector.cmd -Mode Report -ReportType Usage -Range Last7Days -NoCollect
+     creates a static Usage deliverable. Legacy Detailed remains another
+     explicit static exporter.
+   - Start-ExchangeLogReportAngular.cmd starts the local API and serves compiled
+     Angular assets. It queries retained data when a view or detail is opened;
+     it does not generate a Detailed report or require one to exist.
+4. The collector and Serve must use the intended database. A portal-only
+   -DatabasePath override does NOT reconfigure the scheduled collector.
+5. After later collection commits, extend To, exclusive where necessary and
+   click Apply selection to read again. There is no continuous browser refresh:
+   its time window remains fixed, and a new row after To stays outside it.
+   Each API request is its own short snapshot, not one frozen session-wide
+   snapshot across every page, detail and CSV.
+6. Stop portal stops only that listener. It does not stop scheduled collection.
+   Closing a browser tab alone does not stop the host process.
+
+The illustrated user procedure is chapter C, "Angular investigation", in
+ExchangeLogReport-UserGuide.html. The component/read-write lifecycle is in
+the "Angular Serve" chapter of ExchangeLogReport-Guide.html.
+
+EXTRACT AND START
+Extract the complete reviewed Windows x64 ZIP into a writable, restricted
+local folder. No Node, IIS, installed .NET or installed PowerShell 7 is needed;
+the package includes portable PowerShell. An existing supported Windows
+desktop browser and the collector's Exchange/Windows permissions still apply.
+Start-ExchangeLogReportAngular.cmd runs the package byte verifier, then starts
+collector\Invoke-ExchangeLogReport.ps1 -Mode Serve using the bundled runtime.
+Use -DatabasePath <absolute-path> to select a compatible copy and -Port 8765
+to choose an exact local port. Serve never migrates a source.
+
+Use Database-Storage.cmd --storage-copy with an unused destination and
+--migrate to prepare an older database explicitly. Keep its receipt and the
+unchanged source. Do not open the migrated database with the original tool.
+Schema 7 already belongs to the hash/Packed storage profile; Serve rollups
+have their own schema 8 migration; schema 9 and 10 only replace their indexes/triggers and move the
+log-file '#Fields' header text into the source_fields dictionary.
+Schema 11 (current) adds the SMTP client structures and moves message_rollup to dictionary codes. Its migration is
+one all-or-nothing transaction that rewrites message_rollup and the client_id of every SMTP transaction: plan on the
+order of 3 to 5 minutes of exclusive write access and about 6 GB of free disk space for a database of about 20 GB
+(5.5 million rollup rows, 1.9 million SMTP transactions; estimate from prototypes, measure it on a copy first);
+a smaller database needs proportionally less.
+SMTP rows written, changed or deleted by a program that is not the collector (and the retention) wait in two
+queues until the collection, the retention or an explicit RefreshServeRollups reconciles them; until then Serve
+answers 503 SmtpClientsPending (or RollupPending) rather than an out-of-date list.
+The first backfill and incremental reconciliation perform additional work
+during migration/collection. Fast list reads are not a promise of faster
+ingestion or an instant first migration. Measure both collection cost and
+query latency on the designated copy before deployment.
+
+Windows HTTP.sys permissions or a port conflict can prevent HttpListener
+startup. The error is reported; no URL ACL, firewall or service configuration
+is changed. A required URL reservation must be reviewed and granted by the
+operator under normal policy. There is no automatic fallback to Kestrel.
+
+CONSULT
+The presentation follows the original Detailed HTML: full-width report header,
+overview tiles, server cards and daily chart, horizontal tabs, dense list and
+detail dialogs. The overview counts retained requests, tracking EVENTS and SMTP
+transactions. It does not claim a complete real-user or distinct-message total:
+hourly distinct-message bins cannot be summed without double counting.
+Open Overview, Messages, Client sessions or SMTP clients. Date inputs use the computer's
+timezone and are sent with explicit UTC offsets; stored evidence remains UTC.
+From is inclusive and To is exclusive. Overview has no Exact status filter;
+other lists accept an exact status and page sizes 25, 50, 100, 200 or 500.
+Apply selection returns to page 1; Clear filters clears user/server/status but
+keeps the selected dates. A server card selects that server in Overview.
+Only the selected page is loaded. CDK virtual scrolling limits visible rows.
+The list excludes transcript bodies and session timelines; Open requests one
+record's detail. Existing Packed text is decoded only by the server.
+An SMTP client opens its group-scoped transaction list, then one selected
+transaction opens its transcript. Closing the dialog returns to that selection.
+CSV export remains available on whole filtered lists; it is not offered for a
+single client group because that export endpoint is not group-scoped.
+Filters are preserved in the URL for reproducibility. They may contain private
+account names, server names and periods: review them before copying into a
+private ticket. A local URL is not a remote collaboration endpoint.
+
+The initial access token is in a URL fragment. The frontend removes it from
+the address bar and retains it only in this tab's session storage. Never send
+the private launch link or a readiness file to someone else. A recipient must
+launch their own authorized instance. Closing Serve invalidates that token.
+
+BOUNDS AND COVERAGE
+Each request uses a separate read-only SQLite connection and short snapshot,
+with query_only and bounded cache/mmap settings. Serve does not acquire the
+maintenance file guard or collector lock, so it can coexist with collection.
+Some resource contention on CPU/disk and WAL/checkpoint delay is still possible.
+Timeouts, stale/pending rollups and unsupported schemas are explicit failures,
+never an empty successful report.
+Page size is at most 500; offset is at most 10000. Narrow a selection rather
+than jumping arbitrarily far into a huge dataset. The API may omit an expensive
+total count. Filtered CSV exports all matching rows, not just the visible page.
+A timed-out or interrupted export is not a complete CSV. Exports and downloads
+need their own access control and retention.
+
+Rollups are derived from retained evidence. Evidence lost to retention cannot
+be recreated by a new interface. Shadow-event exclusions already configured
+in the collector are preserved; extra tracking events are not silently dropped.
+Message hashes always require exact text comparison. Collisions must never
+merge identities, routes or distinct counts.
+The collected log range comes from source-file metadata; it is not a guarantee
+that every detail in that range remains after retention. Use the existing
+Status command and retention settings to assess retained history.
+
+AUTOMATION
+Use -NoBrowser -ReadyFile <unused-private-path> -ReadyFileWithToken only when
+explicitly needed for local automation. The readiness file is private to the
+current Windows identity; it must not be committed, packaged or shared.
+Successful readiness has status "ready"; a bind failure has status "blocked"
+and a diagnostic code but no token. Existing readiness files are not replaced.
+The token must be supplied as X-Portal-Token. There is no CORS, arbitrary SQL,
+arbitrary process execution, remote listener or web maintenance endpoint.
+Use Stop portal or Ctrl+C to stop the listener.
+
+DEVELOPMENT AND MEASUREMENT
+Node/npm are build dependencies only. The frontend lockfile, generated typed
+contracts and compiled assets belong to the source/package integrity inventory.
+Backend tests and latency measurements precede frontend changes. Results from
+small or synthetic databases do not prove performance for a 24-GB client
+database or an OS-cache-cold run. Actual deployment measurements must retain
+database size, row count, exact filters, query plans and per-request timings.
+The retained static Detailed exporter remains available for compatibility,
+but Serve never invokes it automatically.
+
+DISCLAIMER
+This Script is a Personal project.
+It's provided "AS-IS". It's not an official Microsoft product so no support can be expected from Microsoft.
+
+As any scripts you must read carefully the documentation and test it first in a Test environment before any run in Production.
