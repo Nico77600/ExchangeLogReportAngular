@@ -162,6 +162,31 @@ Describe 'Public pilot workflow contracts' {
             Should -BeGreaterThan $preflight.IndexOf("throw 'Node engine preflight failed.")
     }
 
+    It 'creates the new module destination before the pinned download without executing that download in this regression' {
+        $initializer = [IO.File]::ReadAllText((Join-Path $script:Root '.github\scripts\Initialize-CIModules.ps1'))
+        $tokens = $null
+        $errors = $null
+        $ast = [Management.Automation.Language.Parser]::ParseInput($initializer, [ref]$tokens, [ref]$errors)
+        $create = @($ast.EndBlock.Statements | Where-Object {
+            $_.Extent.Text -ceq '[void][IO.Directory]::CreateDirectory($Destination)'
+        })
+        $download = @($ast.FindAll({
+            param($node)
+            $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -ceq 'Save-Module'
+        }, $true))
+        $create.Count | Should -Be 1
+        $download.Count | Should -Be 1
+        $create[0].Extent.StartOffset | Should -BeLessThan $download[0].Extent.StartOffset
+        $initializer.IndexOf('if (Test-Path -LiteralPath $Destination)') |
+            Should -BeLessThan $create[0].Extent.StartOffset
+        $download[0].Extent.Text |
+            Should -BeExactly 'Save-Module -Name Pester -RequiredVersion 6.1.0 -Repository PSGallery -Path $Destination -ErrorAction Stop'
+        $Destination = Join-Path $TestDrive 'new-module-parent\ci-modules'
+        Test-Path -LiteralPath $Destination | Should -BeFalse
+        . ([scriptblock]::Create($create[0].Extent.Text))
+        Test-Path -LiteralPath $Destination -PathType Container | Should -BeTrue
+    }
+
     It 'builds linked collector source and verifies the standalone package without publishing it' {
         $runs = @($script:Ci.jobs.validate.steps | Where-Object { $_.PSObject.Properties['run'] } | ForEach-Object run) -join "`n"
         $runs | Should -Match 'dotnet build .*host\\ExchangeLogReportAngular.Host.csproj'

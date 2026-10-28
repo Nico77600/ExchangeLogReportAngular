@@ -11,6 +11,7 @@ if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
     throw 'PSGallery is not registered. Review the runner configuration; no repository is registered automatically.'
 }
 if (Test-Path -LiteralPath $Destination) { throw 'Use a new module destination.' }
+[void][IO.Directory]::CreateDirectory($Destination)
 Save-Module -Name Pester -RequiredVersion 6.1.0 -Repository PSGallery -Path $Destination -ErrorAction Stop
 $manifest = Join-Path $Destination 'Pester\6.1.0\Pester.psd1'
 if ((Import-PowerShellDataFile -LiteralPath $manifest).ModuleVersion -cne '6.1.0') {
